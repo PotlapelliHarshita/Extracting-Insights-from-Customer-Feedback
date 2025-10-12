@@ -73,18 +73,40 @@ def admin_login():
         admin = cursor.fetchone()
         cursor.close()
 
-        if admin and check_password_hash(admin["password_hash"], password):
-            access_token = create_access_token(identity=admin["username"], additional_claims={"role": "admin"})
-            resp = redirect(url_for("main.admin_dashboard"))
-            set_access_cookies(resp, access_token)
-            flash("Admin login successful!", "success")
-            return resp
+        if admin:
+            stored = admin.get("password_hash") or ""
+            # Normal hashed-password path
+            if check_password_hash(stored, password):
+                access_token = create_access_token(identity=admin["username"], additional_claims={"role": "admin"})
+                resp = redirect(url_for("main.admin_dashboard"))
+                set_access_cookies(resp, access_token)
+                flash("Admin login successful!", "success")
+                return resp
+            # Backward-compatibility: if the stored value is plaintext and matches input, upgrade to hashed
+            elif stored == password and password:
+                try:
+                    new_hash = generate_password_hash(password)
+                    cur2 = mysql.connection.cursor()
+                    cur2.execute("UPDATE admins SET password_hash=%s WHERE username=%s", (new_hash, username))
+                    mysql.connection.commit()
+                    cur2.close()
+                    # Proceed to login
+                    access_token = create_access_token(identity=admin["username"], additional_claims={"role": "admin"})
+                    resp = redirect(url_for("main.admin_dashboard"))
+                    set_access_cookies(resp, access_token)
+                    flash("Admin login successful!", "success")
+                    return resp
+                except Exception:
+                    # Do not expose details; fall through to invalid credentials
+                    pass
 
         flash("Invalid admin credentials.", "danger")
         return redirect(url_for("main.admin_login"))
 
     return render_template("admin_login.html")
 
+
+ 
 
 
 # ---------- Register ----------
@@ -141,7 +163,8 @@ from flask import jsonify
 def admin_dashboard():
     claims = get_jwt()
     if claims.get("role") != "admin":
-        return {"error": "Unauthorized"}, 403
+        flash("Please login as admin to view the dashboard.", "warning")
+        return redirect(url_for("main.admin_login"))
 
     cursor = dict_cursor()
     cursor.execute("SELECT user_id, username, email FROM users ORDER BY user_id")
