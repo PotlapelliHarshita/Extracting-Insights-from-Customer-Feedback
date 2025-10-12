@@ -692,9 +692,36 @@ def highlight_aspects(text: str, aspect_sentiments: dict):
 
 # Keyword highlighting helper - Highlight sentiment-bearing words from opinion lexicon
 def highlight_keywords(text, sentiment=None):
-    """Highlight sentiment-bearing words from opinion lexicon in the text with appropriate colors."""
+    """Highlight sentiment-bearing words from opinion lexicon in the text with appropriate colors.
+    Uses spaCy when available; falls back to regex-based highlighting if spaCy model is missing.
+    """
     if not text:
         return text
+
+    # Fallback path when spaCy model isn't available
+    if nlp is None:
+        try:
+            highlighted = text
+            if positive_words:
+                pos_pattern = r"\b(" + "|".join(map(re.escape, sorted(positive_words, key=len, reverse=True))) + r")\b"
+                highlighted = re.sub(
+                    pos_pattern,
+                    lambda m: f'<span style="background-color: lightgreen; padding: 2px 4px; border-radius: 3px;">{m.group(0)}</span>',
+                    highlighted,
+                    flags=re.IGNORECASE,
+                )
+            if negative_words:
+                neg_pattern = r"\b(" + "|".join(map(re.escape, sorted(negative_words, key=len, reverse=True))) + r")\b"
+                highlighted = re.sub(
+                    neg_pattern,
+                    lambda m: f'<span style="background-color: lightcoral; padding: 2px 4px; border-radius: 3px;">{m.group(0)}</span>',
+                    highlighted,
+                    flags=re.IGNORECASE,
+                )
+            return highlighted
+        except Exception as e:
+            logging.warning(f"Fallback keyword highlight failed: {e}")
+            return text
 
     try:
         # Process text with spaCy for tokenization
