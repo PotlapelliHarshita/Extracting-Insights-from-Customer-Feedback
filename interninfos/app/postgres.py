@@ -16,18 +16,22 @@ class PostgresCompat:
         if psycopg2 is None:
             raise RuntimeError("psycopg2 is required for database connections")
 
-        database_url = current_app.config.get("DATABASE_URL")
-        if database_url:
-            return psycopg2.connect(database_url)
+        try:
+            database_url = current_app.config.get("DATABASE_URL")
+            if database_url:
+                return psycopg2.connect(database_url)
 
-        return psycopg2.connect(
-            host=current_app.config["DB_HOST"],
-            port=current_app.config["DB_PORT"],
-            user=current_app.config["DB_USER"],
-            password=current_app.config["DB_PASSWORD"],
-            dbname=current_app.config["DB_NAME"],
-            sslmode=current_app.config.get("DB_SSLMODE", "require"),
-        )
+            return psycopg2.connect(
+                host=current_app.config["DB_HOST"],
+                port=current_app.config["DB_PORT"],
+                user=current_app.config["DB_USER"],
+                password=current_app.config["DB_PASSWORD"],
+                dbname=current_app.config["DB_NAME"],
+                sslmode=current_app.config.get("DB_SSLMODE", "require"),
+            )
+        except Exception as e:
+            current_app.logger.error(f"Database connection failed: {str(e)}")
+            raise
 
     @property
     def connection(self):

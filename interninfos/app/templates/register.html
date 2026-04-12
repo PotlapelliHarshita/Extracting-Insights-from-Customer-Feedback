@@ -23,6 +23,7 @@
     </div>
 
     <form id="registerForm" method="POST" action="{{ url_for('main.register') }}" class="form-grid" novalidate>
+      {{ csrf_form_input() }}
       <div class="two-col">
         <div>
           <label class="label-gz" for="username">Username</label>

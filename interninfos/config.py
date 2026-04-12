@@ -3,6 +3,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+_INVALID_SECRET_VALUES = {
+    "",
+    "dev-jwt-secret-key-12345",
+    "dev-secret",
+    "replace-with-a-secure-secret",
+    "replace-with-a-flask-secret",
+}
+
+
 class Config:
     DATABASE_URL = os.getenv('DATABASE_URL', '').strip() or None
     REDIS_URL = os.getenv('REDIS_URL', '').strip() or None
@@ -21,5 +30,18 @@ class Config:
     DB_NAME = os.getenv('DB_NAME', 'postgres')
     DB_SSLMODE = os.getenv('DB_SSLMODE', 'require')
 
-    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-jwt-secret-key-12345')
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '').strip() or None
+    FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip() or None
     MIN_PASSWORD_LENGTH = int(os.getenv('MIN_PASSWORD_LENGTH', '8'))
+
+    @classmethod
+    def validate_runtime_secrets(cls):
+        invalid = [
+            name for name, value in {
+                "JWT_SECRET_KEY": cls.JWT_SECRET_KEY or "",
+                "FLASK_SECRET_KEY": cls.FLASK_SECRET_KEY or "",
+            }.items()
+            if value in _INVALID_SECRET_VALUES
+        ]
+        if invalid:
+            raise RuntimeError(f"Set secure values for: {', '.join(invalid)}")

@@ -58,6 +58,7 @@
         <ul class="list-clean" style="color:rgba(214,227,245,0.82);">
           <li>UTF-8 CSV is recommended.</li>
           <li>Empty rows are skipped automatically.</li>
+          <li>An optional <code>category</code> column is supported.</li>
           <li>Deep analysis runs after every successful upload.</li>
         </ul>
       </aside>
@@ -75,6 +76,10 @@
         <div>
           <label class="label-gz" for="raw_review">Review text</label>
           <textarea class="input-gz" id="raw_review" name="raw_review" rows="8" placeholder="Write customer feedback here"></textarea>
+        </div>
+        <div>
+          <label class="label-gz" for="category">Category (optional)</label>
+          <input class="input-gz" type="text" id="category" name="category" maxlength="100" placeholder="Billing, Delivery, Mobile App">
         </div>
         <div class="callout-strip">
           <span id="charCount">0 characters</span>

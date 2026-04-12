@@ -29,6 +29,8 @@ detect_langs = None
 KMeans = None
 TfidfVectorizer = None
 SentenceTransformer = None
+AutoTokenizer = None
+AutoModelForSequenceClassification = None
 
 
 def _load_nltk_dependencies():
@@ -72,6 +74,30 @@ def _get_transformers_pipeline():
             return None
         pipeline = pipeline_module
     return None if pipeline is False else pipeline
+
+
+def _get_auto_tokenizer_cls():
+    global AutoTokenizer
+    if AutoTokenizer is None:
+        try:
+            from transformers import AutoTokenizer as auto_tokenizer_cls
+        except ModuleNotFoundError:
+            AutoTokenizer = False
+            return None
+        AutoTokenizer = auto_tokenizer_cls
+    return None if AutoTokenizer is False else AutoTokenizer
+
+
+def _get_auto_model_cls():
+    global AutoModelForSequenceClassification
+    if AutoModelForSequenceClassification is None:
+        try:
+            from transformers import AutoModelForSequenceClassification as auto_model_cls
+        except ModuleNotFoundError:
+            AutoModelForSequenceClassification = False
+            return None
+        AutoModelForSequenceClassification = auto_model_cls
+    return None if AutoModelForSequenceClassification is False else AutoModelForSequenceClassification
 
 
 def _get_detect_langs():
@@ -624,18 +650,20 @@ def enhanced_sentiment_analysis(text: str) -> dict:
 def get_sentiment_analyzer():
     global _sentiment_analyzer
     if _sentiment_analyzer is None:
-        pipeline_factory = _get_transformers_pipeline()
-        if pipeline_factory is None:
-            return None
         try:
-            pipeline_kwargs = {"device": -1}
-            if not ALLOW_MODEL_DOWNLOADS:
-                pipeline_kwargs["local_files_only"] = True
+            pipeline_factory = _get_transformers_pipeline()
+            auto_tokenizer_cls = _get_auto_tokenizer_cls()
+            auto_model_cls = _get_auto_model_cls()
+            if pipeline_factory is None or auto_tokenizer_cls is None or auto_model_cls is None:
+                return None
+            load_kwargs = {"local_files_only": True} if not ALLOW_MODEL_DOWNLOADS else {}
+            tokenizer = auto_tokenizer_cls.from_pretrained(MODEL_NAME, **load_kwargs)
+            model = auto_model_cls.from_pretrained(MODEL_NAME, **load_kwargs)
             _sentiment_analyzer = pipeline_factory(
                 "sentiment-analysis",
-                model=MODEL_NAME,
-                tokenizer=MODEL_NAME,
-                **pipeline_kwargs,
+                model=model,
+                tokenizer=tokenizer,
+                device=-1,
             )
         except (OSError, ValueError, TypeError) as e:
             logging.warning(f"Failed to load sentiment analyzer: {e}")
@@ -645,14 +673,21 @@ def get_sentiment_analyzer():
 def get_bert_analyzer():
     global _bert_analyzer
     if _bert_analyzer is None:
-        pipeline_factory = _get_transformers_pipeline()
-        if pipeline_factory is None:
-            return None
         try:
-            pipeline_kwargs = {"device": -1}
-            if not ALLOW_MODEL_DOWNLOADS:
-                pipeline_kwargs["local_files_only"] = True
-            _bert_analyzer = pipeline_factory("sentiment-analysis", model=MODEL_BERT, **pipeline_kwargs)
+            pipeline_factory = _get_transformers_pipeline()
+            auto_tokenizer_cls = _get_auto_tokenizer_cls()
+            auto_model_cls = _get_auto_model_cls()
+            if pipeline_factory is None or auto_tokenizer_cls is None or auto_model_cls is None:
+                return None
+            load_kwargs = {"local_files_only": True} if not ALLOW_MODEL_DOWNLOADS else {}
+            tokenizer = auto_tokenizer_cls.from_pretrained(MODEL_BERT, **load_kwargs)
+            model = auto_model_cls.from_pretrained(MODEL_BERT, **load_kwargs)
+            _bert_analyzer = pipeline_factory(
+                "sentiment-analysis",
+                model=model,
+                tokenizer=tokenizer,
+                device=-1,
+            )
         except (OSError, ValueError, TypeError) as e:
             logging.warning(f"Failed to load BERT analyzer: {e}")
             _bert_analyzer = None
@@ -661,14 +696,21 @@ def get_bert_analyzer():
 def get_irony_analyzer():
     global _irony_analyzer
     if _irony_analyzer is None:
-        pipeline_factory = _get_transformers_pipeline()
-        if pipeline_factory is None:
-            return None
         try:
-            pipeline_kwargs = {"device": -1}
-            if not ALLOW_MODEL_DOWNLOADS:
-                pipeline_kwargs["local_files_only"] = True
-            _irony_analyzer = pipeline_factory("text-classification", model=MODEL_IRONY, **pipeline_kwargs)
+            pipeline_factory = _get_transformers_pipeline()
+            auto_tokenizer_cls = _get_auto_tokenizer_cls()
+            auto_model_cls = _get_auto_model_cls()
+            if pipeline_factory is None or auto_tokenizer_cls is None or auto_model_cls is None:
+                return None
+            load_kwargs = {"local_files_only": True} if not ALLOW_MODEL_DOWNLOADS else {}
+            tokenizer = auto_tokenizer_cls.from_pretrained(MODEL_IRONY, **load_kwargs)
+            model = auto_model_cls.from_pretrained(MODEL_IRONY, **load_kwargs)
+            _irony_analyzer = pipeline_factory(
+                "text-classification",
+                model=model,
+                tokenizer=tokenizer,
+                device=-1,
+            )
         except (OSError, ValueError, TypeError) as e:
             logging.warning(f"Failed to load irony analyzer: {e}")
             _irony_analyzer = None
@@ -1243,12 +1285,12 @@ def compute_aspect_trends(review_analyses: list[dict]):
 def get_model_health():
     return {
         'spacy_ready': get_spacy_model() is not None,
-        'sentiment_model_ready': _sentiment_analyzer is not None or importlib.util.find_spec('transformers') is not None,
-        'bert_model_ready': _bert_analyzer is not None or importlib.util.find_spec('transformers') is not None,
-        'irony_model_ready': _irony_analyzer is not None or importlib.util.find_spec('transformers') is not None,
+        'sentiment_model_ready': get_sentiment_analyzer() is not None,
+        'bert_model_ready': get_bert_analyzer() is not None,
+        'irony_model_ready': get_irony_analyzer() is not None,
         'language_detection_ready': _get_detect_langs() is not None,
         'clustering_ready': _get_tfidf_vectorizer_cls() is not None and _get_kmeans_cls() is not None,
-        'embedding_clustering_ready': _embedding_model is not None or importlib.util.find_spec('sentence_transformers') is not None
+        'embedding_clustering_ready': get_embedding_model() is not None
     }
 
 

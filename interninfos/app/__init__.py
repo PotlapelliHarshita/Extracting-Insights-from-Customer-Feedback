@@ -15,6 +15,7 @@ jwt = JWTManager()
 analysis_queue = None
 
 def create_app():
+    Config.validate_runtime_secrets()
     app = Flask(__name__)
 
     # Load configuration
@@ -34,6 +35,7 @@ def create_app():
     app.config['DB_NAME'] = Config.DB_NAME
     app.config['DB_SSLMODE'] = Config.DB_SSLMODE
     app.config['JWT_SECRET_KEY'] = Config.JWT_SECRET_KEY
+    app.config['FLASK_SECRET_KEY'] = Config.FLASK_SECRET_KEY
     app.config['MIN_PASSWORD_LENGTH'] = Config.MIN_PASSWORD_LENGTH
 
     # JWT Token stored in cookies
@@ -41,7 +43,7 @@ def create_app():
     app.config['JWT_COOKIE_SECURE'] = os.environ.get('JWT_COOKIE_SECURE', 'false').lower() == 'true'
     app.config['JWT_COOKIE_CSRF_PROTECT'] = os.environ.get('JWT_COOKIE_CSRF_PROTECT', 'true').lower() == 'true'
     app.config['JWT_CSRF_CHECK_FORM'] = True
-    app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.environ.get('JWT_SECRET_KEY', 'dev-secret')
+    app.secret_key = Config.FLASK_SECRET_KEY
     
     # Initialize extensions
     mysql.init_app(app)
@@ -73,7 +75,4 @@ def create_app():
     return app
 
 
-# Expose a WSGI application object so deployments using `gunicorn app:app`
-# work even when the package name matches the module path.
-app = create_app()
 

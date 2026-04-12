@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, session, url_for, flash, current_app, send_file, jsonify
 from flask_jwt_extended import (
-    create_access_token, jwt_required, get_jwt_identity,
+    create_access_token, jwt_required, get_jwt_identity, get_jwt,
     set_access_cookies, unset_jwt_cookies
 )
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -100,6 +100,35 @@ def safe_float(value, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def parse_bounded_int(raw_value, default: int = 30, minimum: int = 1, maximum: int = 365) -> int:
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(value, maximum))
+
+
+def require_user_identity():
+    claims = get_jwt()
+    if claims.get("role") == "admin":
+        return None, (jsonify({"error": "Admin sessions cannot access user endpoints."}), 403)
+
+    try:
+        return int(get_jwt_identity()), None
+    except (TypeError, ValueError):
+        return None, (jsonify({"error": "Invalid user identity."}), 422)
+
+
+def decode_csv_upload(file_storage) -> str:
+    payload = file_storage.stream.read()
+    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            return payload.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return payload.decode("utf-8", errors="replace")
 
 
 def password_min_length() -> int:
@@ -314,38 +343,45 @@ def register():
             flash(password_error, "danger")
             return render_template("register.html", username=username, email=email)
 
-        cursor = dict_cursor()
-        # unique check
-        cursor.execute("SELECT user_id FROM users WHERE username=%s", (username,))
-        if cursor.fetchone():
-            error_username = "Username already exists"
-        cursor.execute("SELECT user_id FROM users WHERE email=%s", (email,))
-        if cursor.fetchone():
-            error_email = "Email already registered"
+        cursor = None
+        try:
+            cursor = dict_cursor()
+            # unique check
+            cursor.execute("SELECT user_id FROM users WHERE username=%s", (username,))
+            if cursor.fetchone():
+                error_username = "Username already exists"
+            cursor.execute("SELECT user_id FROM users WHERE email=%s", (email,))
+            if cursor.fetchone():
+                error_email = "Email already registered"
 
-        if error_username or error_email:
-            cursor.close()
-            return render_template("register.html",
-                                   error_username=error_username,
-                                   error_email=error_email,
-                                   username=username,
-                                   email=email)
+            if error_username or error_email:
+                return render_template("register.html",
+                                       error_username=error_username,
+                                       error_email=error_email,
+                                       username=username,
+                                       email=email)
 
-        password_hash = generate_password_hash(password)
-        cursor.execute(
-            "INSERT INTO users (username, email, password_hash, created_at) VALUES (%s, %s, %s, %s)",
-            (username, email, password_hash, datetime.now(timezone.utc))
-        )
-        mysql.connection.commit()
-        cursor.close()
-        flash("Registration successful! Please login.", "success")
-        return redirect(url_for("main.home"))
+            password_hash = generate_password_hash(password)
+            cursor.execute(
+                "INSERT INTO users (username, email, password_hash, created_at) VALUES (%s, %s, %s, %s)",
+                (username, email, password_hash, datetime.now(timezone.utc))
+            )
+            mysql.connection.commit()
+            flash("Registration successful! Please login.", "success")
+            return redirect(url_for("main.home"))
+
+        except Exception as e:
+            if mysql.connection:
+                mysql.connection.rollback()
+            current_app.logger.error(f"Registration error: {str(e)}")
+            flash(f"An error occurred during registration. This is usually due to database configuration. Error: {str(e)}", "danger")
+            return render_template("register.html", username=username, email=email)
+        finally:
+            if cursor:
+                cursor.close()
 
     return render_template("register.html")
 
-# Admin Dashboard (User Details + Review Analysis)
-from flask_jwt_extended import get_jwt
-from flask import jsonify
 
 @main.route("/admin_dashboard")
 @jwt_required()
@@ -527,7 +563,10 @@ def sentiment_trends():
 @main.route("/dashboard")
 @jwt_required()
 def dashboard():
-    user_id = get_jwt_identity()
+    user_id, error_response = require_user_identity()
+    if error_response:
+        return error_response
+
     cursor = dict_cursor()
     cursor.execute("SELECT user_id, username, email FROM users WHERE user_id=%s", (user_id,))
     user = cursor.fetchone()
@@ -639,7 +678,10 @@ def dashboard():
 @main.route("/profile", methods=["GET", "POST"])
 @jwt_required()
 def profile():
-    user_id = get_jwt_identity()
+    user_id, error_response = require_user_identity()
+    if error_response:
+        return error_response
+
     cursor = dict_cursor()
 
     if request.method == "POST":
@@ -797,7 +839,10 @@ def profile():
 @main.route("/settings", methods=["GET", "POST"])
 @jwt_required()
 def settings():
-    user_id = get_jwt_identity()
+    user_id, error_response = require_user_identity()
+    if error_response:
+        return error_response
+
     cursor = dict_cursor()
 
     if request.method == "POST":
@@ -840,9 +885,13 @@ def settings():
 @main.route("/upload_review", methods=["GET", "POST"])
 @jwt_required()
 def upload_review():
-    user_id = get_jwt_identity()
+    user_id, error_response = require_user_identity()
+    if error_response:
+        return error_response
+
     if request.method == "POST":
         raw_review = (request.form.get("raw_review") or "").strip()
+        category = (request.form.get("category") or "").strip()[:100] or None
         file = request.files.get("file")
         rows = []
 
@@ -856,7 +905,7 @@ def upload_review():
                 INSERT INTO reviews (user_id, review_text, product_id, category, uploaded_at, overall_sentiment, overall_sentiment_score)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING review_id
-            """, (user_id, raw_review, None, None, datetime.now(timezone.utc), sentiment_label, sent_score))
+            """, (user_id, raw_review, None, category, datetime.now(timezone.utc), sentiment_label, sent_score))
             review_id = cursor.fetchone()[0]
             mysql.connection.commit()
             cursor.close()
@@ -874,18 +923,30 @@ def upload_review():
 
         # Case 2: CSV
         elif file and file.filename.lower().endswith(".csv"):
-            stream = io.StringIO(file.stream.read().decode("utf-8"))
+            stream = io.StringIO(decode_csv_upload(file))
             reader = csv.DictReader(stream)
-            if not reader.fieldnames or "review_text" not in reader.fieldnames:
+            fieldnames = reader.fieldnames or []
+            normalized_fieldnames = {
+                fieldname.strip().lower(): fieldname
+                for fieldname in fieldnames
+                if fieldname
+            }
+            review_text_field = normalized_fieldnames.get("review_text")
+            category_field = normalized_fieldnames.get("category")
+            if not review_text_field:
                 flash("CSV must contain a 'review_text' column.", "danger")
                 return redirect(url_for("main.upload_review"))
             for row in reader:
-                text = (row.get("review_text") or "").strip()
+                text = (row.get(review_text_field) or "").strip()
                 if text:
+                    row_category = (
+                        (row.get(category_field) or "").strip()[:100] or None
+                        if category_field else None
+                    )
                     sentiment_result = nlp_utils.enhanced_sentiment_analysis(text)
                     sentiment_label = sentiment_result["sentiment"]
                     sent_score = sentiment_result["confidence"]
-                    rows.append((user_id, text, None, None, datetime.now(timezone.utc), sentiment_label, sent_score))
+                    rows.append((user_id, text, None, row_category, datetime.now(timezone.utc), sentiment_label, sent_score))
 
             if rows:
                 cursor = mysql.connection.cursor()
@@ -958,7 +1019,10 @@ def upload_review():
 @main.route("/profile/export")
 @jwt_required()
 def export_reviews():
-    user_id = get_jwt_identity()
+    user_id, error_response = require_user_identity()
+    if error_response:
+        return error_response
+
     filters = parse_review_filters(request.args)
     where_sql, params = build_user_review_where_sql(user_id, filters)
 
@@ -1026,7 +1090,10 @@ def export_reviews():
 @main.route("/delete_review/<int:review_id>", methods=["POST"])
 @jwt_required()
 def delete_review(review_id):
-    user_id = get_jwt_identity()
+    user_id, error_response = require_user_identity()
+    if error_response:
+        return error_response
+
     cursor = mysql.connection.cursor()
     cursor.execute("DELETE FROM reviews WHERE review_id=%s AND user_id=%s", (review_id, user_id))
     deleted = cursor.rowcount
@@ -1054,7 +1121,10 @@ def logout():
 @jwt_required()
 def review_analysis(review_id):
     """Return detailed analysis of a specific review."""
-    user_id = get_jwt_identity()
+    user_id, error_response = require_user_identity()
+    if error_response:
+        return error_response
+
     cursor = dict_cursor()
 
     # Fetch the review and verify ownership
@@ -1190,7 +1260,7 @@ def admin_api_issue_clusters():
     if claims.get("role") != "admin":
         return {"error": "Unauthorized"}, 403
 
-    time_range = int(request.args.get('time_range', 30))
+    time_range = parse_bounded_int(request.args.get('time_range'), default=30)
     analyses = fetch_review_analysis_payloads(
         "WHERE r.uploaded_at >= NOW() - (%s * INTERVAL '1 day')",
         (time_range,),
@@ -1207,7 +1277,7 @@ def admin_api_aspect_trends():
     if claims.get("role") != "admin":
         return {"error": "Unauthorized"}, 403
 
-    time_range = int(request.args.get('time_range', 30))
+    time_range = parse_bounded_int(request.args.get('time_range'), default=30)
     analyses = fetch_review_analysis_payloads(
         "WHERE r.uploaded_at >= NOW() - (%s * INTERVAL '1 day')",
         (time_range,),
@@ -1385,6 +1455,25 @@ def admin_api_aspect_categories():
 
     return jsonify(categories)
 
+@main.route("/admin/api/review_categories", methods=["GET"])
+@jwt_required()
+def admin_api_review_categories():
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return {"error": "Unauthorized"}, 403
+
+    cursor = dict_cursor()
+    cursor.execute("""
+        SELECT DISTINCT category
+        FROM reviews
+        WHERE category IS NOT NULL AND TRIM(category) <> ''
+        ORDER BY category ASC
+    """)
+    rows = cursor.fetchall()
+    cursor.close()
+
+    return jsonify({"categories": [row["category"] for row in rows]})
+
 @main.route("/admin/aspect_categories", methods=["POST"])
 @jwt_required()
 def admin_add_aspect_category():
@@ -1418,17 +1507,17 @@ def admin_api_sentiment_trends():
         return {"error": "Unauthorized"}, 403
 
     category = request.args.get('category', 'all')
-    time_range = int(request.args.get('time_range', 30))
-    sentiment_filter = request.args.get('sentiment', 'all')
+    time_range = parse_bounded_int(request.args.get('time_range'), default=30)
+    sentiment_filter = (request.args.get('sentiment', 'all') or 'all').strip().lower()
 
     cursor = dict_cursor()
 
     # Build query
     query = """
         SELECT DATE(uploaded_at) as date,
-               SUM(CASE WHEN overall_sentiment = 'positive' THEN 1 ELSE 0 END) as positive_count,
-               SUM(CASE WHEN overall_sentiment = 'negative' THEN 1 ELSE 0 END) as negative_count,
-               SUM(CASE WHEN overall_sentiment = 'neutral' THEN 1 ELSE 0 END) as neutral_count
+               SUM(CASE WHEN LOWER(COALESCE(overall_sentiment, 'neutral')) = 'positive' THEN 1 ELSE 0 END) as positive_count,
+               SUM(CASE WHEN LOWER(COALESCE(overall_sentiment, 'neutral')) = 'negative' THEN 1 ELSE 0 END) as negative_count,
+               SUM(CASE WHEN LOWER(COALESCE(overall_sentiment, 'neutral')) = 'neutral' THEN 1 ELSE 0 END) as neutral_count
         FROM reviews
         WHERE uploaded_at >= NOW() - (%s * INTERVAL '1 day')
     """
@@ -1439,7 +1528,7 @@ def admin_api_sentiment_trends():
         params.append(category)
 
     if sentiment_filter != 'all':
-        query += " AND overall_sentiment = %s"
+        query += " AND LOWER(COALESCE(overall_sentiment, 'neutral')) = %s"
         params.append(sentiment_filter)
 
     query += " GROUP BY DATE(uploaded_at) ORDER BY DATE(uploaded_at) ASC"
@@ -1463,8 +1552,8 @@ def admin_api_aspect_sentiment_distribution():
         return {"error": "Unauthorized"}, 403
 
     category = request.args.get('category', 'all')
-    time_range = int(request.args.get('time_range', 30))
-    sentiment_filter = request.args.get('sentiment', 'all')
+    time_range = parse_bounded_int(request.args.get('time_range'), default=30)
+    sentiment_filter = (request.args.get('sentiment', 'all') or 'all').strip().lower()
 
     cursor = dict_cursor()
 
@@ -1481,7 +1570,7 @@ def admin_api_aspect_sentiment_distribution():
         params.append(category)
 
     if sentiment_filter != 'all':
-        query += " AND overall_sentiment = %s"
+        query += " AND LOWER(COALESCE(overall_sentiment, 'neutral')) = %s"
         params.append(sentiment_filter)
 
     query += " ORDER BY uploaded_at DESC LIMIT 100"

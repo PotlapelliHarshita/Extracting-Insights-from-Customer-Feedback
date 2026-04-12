@@ -320,15 +320,16 @@
   }
 
   async function loadCategories() {
-    const categories = await getJson('/admin/api/aspect_categories');
+    const data = await getJson('/admin/api/review_categories');
+    const categories = data.categories || [];
     const select = document.getElementById('filterCategory');
     const values = new Set(Array.from(select.options).map(o => o.value));
 
-    categories.forEach((c) => {
-      if (!values.has(c.name)) {
+    categories.forEach((category) => {
+      if (!values.has(category)) {
         const o = document.createElement('option');
-        o.value = c.name;
-        o.textContent = c.name;
+        o.value = category;
+        o.textContent = category;
         select.appendChild(o);
       }
     });
