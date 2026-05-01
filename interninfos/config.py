@@ -22,6 +22,8 @@ class Config:
     SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '').strip() or None
     SMTP_FROM_EMAIL = os.getenv('SMTP_FROM_EMAIL', '').strip() or None
     ALERT_EMAIL_TO = os.getenv('ALERT_EMAIL_TO', '').strip() or None
+    SMTP_USE_TLS = os.getenv('SMTP_USE_TLS', 'true')
+    SMTP_USE_SSL = os.getenv('SMTP_USE_SSL', 'false')
 
     DB_HOST = os.getenv('DB_HOST', 'localhost')
     DB_PORT = int(os.getenv('DB_PORT', '5432'))
@@ -33,6 +35,7 @@ class Config:
     JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '').strip() or None
     FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY', '').strip() or None
     MIN_PASSWORD_LENGTH = int(os.getenv('MIN_PASSWORD_LENGTH', '8'))
+    PASSWORD_REQUIRE_COMPLEXITY = os.getenv('PASSWORD_REQUIRE_COMPLEXITY', 'true').lower() == 'true'
 
     @classmethod
     def validate_runtime_secrets(cls):

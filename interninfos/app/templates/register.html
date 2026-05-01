@@ -99,7 +99,8 @@
           <div class="mb-3">
             <label for="username" class="form-label">Username</label>
             <input type="text" class="form-control" id="username" name="username" placeholder="Choose a username"
-              required>
+              value="{{ username or '' }}" required>
+            {% if error_username %}<div class="text-danger small mt-1">{{ error_username }}</div>{% endif %}
             <div class="invalid-feedback">Please enter a username.</div>
           </div>
 
@@ -107,7 +108,8 @@
           <div class="mb-3">
             <label for="email" class="form-label">Email</label>
             <input type="email" class="form-control" id="email" name="email" placeholder="Enter your email"
-              pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$" required>
+              value="{{ email or '' }}" pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$" required>
+            {% if error_email %}<div class="text-danger small mt-1">{{ error_email }}</div>{% endif %}
             <div class="invalid-feedback">Please enter a valid email address.</div>
           </div>
 
@@ -115,9 +117,9 @@
           <div class="mb-3">
             <label for="password" class="form-label">Password</label>
             <input type="password" class="form-control" id="password" name="password" placeholder="Create a password"
-              pattern="^(?=.[a-z])(?=.[A-Z])(?=.\d)(?=.[\W_]).{8,}$" required>
+              pattern="{{ password_complexity_pattern }}" minlength="{{ min_password_length }}" required>
             <div class="invalid-feedback">
-              Password must be at least 8 characters long,
+              Password must be at least {{ min_password_length }} characters long,
               include uppercase, lowercase, number, and special character.
             </div>
           </div>
@@ -142,7 +144,6 @@
     </div>
   </div>
 </div>
-</section>
 {% endblock %}
 
 {% block extra_js %}
@@ -157,9 +158,9 @@
 
   // Add "required" class to labels of required inputs
   document.querySelectorAll('input[required], select[required], textarea[required]').forEach(input => {
-    const label = document.querySelector(label[for= "${input.id}"]);
-  if (label) label.classList.add('required');
-    });
+    const label = document.querySelector(`label[for="${input.id}"]`);
+    if (label) label.classList.add('required');
+  });
 
   // Custom Validation
   (() => {
@@ -168,14 +169,14 @@
     const password = document.getElementById('password');
     const confirmPassword = document.getElementById('confirm_password');
 
-    registerForm.addEventListener('submit', function (event) {
+    form.addEventListener('submit', function (event) {
       if (password.value !== confirmPassword.value) {
         confirmPassword.setCustomValidity('Passwords do not match');
       } else {
         confirmPassword.setCustomValidity('');
       }
 
-      if (!registerForm.checkValidity()) {
+      if (!form.checkValidity()) {
         event.preventDefault();
         event.stopPropagation();
       }
@@ -188,5 +189,6 @@
         confirmPassword.setCustomValidity('');
       }
     });
+  })();
 </script>
 {% endblock %}

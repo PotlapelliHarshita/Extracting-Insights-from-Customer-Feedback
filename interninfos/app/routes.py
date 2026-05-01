@@ -10,6 +10,7 @@ import csv
 import io
 import json
 import os
+import re
 from psycopg2.extras import RealDictCursor
 
 from . import mysql  # initialized in init.py
@@ -88,6 +89,7 @@ TREND_RANGE_OPTIONS = {
     "180": {"days": 180, "label": "Last 180 days"},
     "all": {"days": None, "label": "All time"},
 }
+PASSWORD_COMPLEXITY_PATTERN = r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$"
 
 
 def normalize_sentiment(sentiment: str | None) -> str:
@@ -140,7 +142,18 @@ def password_rule_error(new_password: str, confirm_password: str) -> str | None:
         return "Passwords do not match."
     if len(new_password) < password_min_length():
         return f"Password must be at least {password_min_length()} characters long."
+    if current_app.config.get("PASSWORD_REQUIRE_COMPLEXITY", True):
+        if not re.match(PASSWORD_COMPLEXITY_PATTERN, new_password):
+            return "Password must include uppercase, lowercase, number, and special character."
     return None
+
+
+def flash_auth_backend_error(action_label: str):
+    current_app.logger.exception(f"{action_label} failed due to a backend error.")
+    flash(
+        f"{action_label} is temporarily unavailable. Check Render logs and database schema.",
+        "danger",
+    )
 
 
 def parse_review_filters(args):
@@ -271,10 +284,17 @@ def login():
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
 
-        cursor = dict_cursor()
-        cursor.execute("SELECT * FROM users WHERE email=%s", (email,))
-        user = cursor.fetchone()
-        cursor.close()
+        cursor = None
+        try:
+            cursor = dict_cursor()
+            cursor.execute("SELECT * FROM users WHERE email=%s", (email,))
+            user = cursor.fetchone()
+        except Exception:
+            flash_auth_backend_error("Login")
+            return redirect(url_for("main.login"))
+        finally:
+            if cursor is not None:
+                cursor.close()
 
         if user and check_password_hash(user["password_hash"], password):
             access_token = create_access_token(identity=str(user["user_id"]))
@@ -302,10 +322,17 @@ def admin_login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
 
-        cursor = dict_cursor()
-        cursor.execute("SELECT * FROM admins WHERE username=%s", (username,))
-        admin = cursor.fetchone()
-        cursor.close()
+        cursor = None
+        try:
+            cursor = dict_cursor()
+            cursor.execute("SELECT * FROM admins WHERE username=%s", (username,))
+            admin = cursor.fetchone()
+        except Exception:
+            flash_auth_backend_error("Admin login")
+            return redirect(url_for("main.admin_login"))
+        finally:
+            if cursor is not None:
+                cursor.close()
 
         if admin and check_password_hash(admin["password_hash"], password):
             access_token = create_access_token(identity=admin["username"], additional_claims={"role": "admin"})
@@ -370,11 +397,12 @@ def register():
             flash("Registration successful! Please login.", "success")
             return redirect(url_for("main.home"))
 
-        except Exception as e:
-            if mysql.connection:
+        except Exception:
+            try:
                 mysql.connection.rollback()
-            current_app.logger.error(f"Registration error: {str(e)}")
-            flash(f"An error occurred during registration. This is usually due to database configuration. Error: {str(e)}", "danger")
+            except Exception:
+                pass
+            flash_auth_backend_error("Registration")
             return render_template("register.html", username=username, email=email)
         finally:
             if cursor:
@@ -1351,7 +1379,8 @@ def admin_api_alert_scan():
     return jsonify({
         "message": "Alert scan queued",
         "job_id": job["job_id"],
-        "execution_mode": "rq" if rq_job is not None else "database_queue"
+        "execution_mode": "rq" if rq_job is not None else "database_queue",
+        "warning": None if rq_job is not None else "No RQ worker is configured. Run scripts/process_analysis_jobs.py or start scripts/rq_worker.py to process queued jobs.",
     }), 202
 
 
@@ -1392,7 +1421,8 @@ def admin_api_enqueue_reanalysis():
         "message": "Re-analysis job queued",
         "job_id": job["job_id"],
         "status": job["status"],
-        "execution_mode": "rq" if rq_job is not None else "database_queue"
+        "execution_mode": "rq" if rq_job is not None else "database_queue",
+        "warning": None if rq_job is not None else "No RQ worker is configured. Run scripts/process_analysis_jobs.py or start scripts/rq_worker.py to process queued jobs.",
     }), 202
 
 # New endpoint for detailed review analysis (admin)

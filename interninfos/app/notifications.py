@@ -34,9 +34,17 @@ def send_email_alert(config: dict, title: str, message: str):
     port = int(config.get("SMTP_PORT") or 587)
     username = config.get("SMTP_USERNAME")
     password = config.get("SMTP_PASSWORD")
+    use_ssl = str(config.get("SMTP_USE_SSL", "false")).lower() == "true"
+    use_tls = str(config.get("SMTP_USE_TLS", "true")).lower() == "true"
+    smtp_client = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
 
-    with smtplib.SMTP(host, port, timeout=15) as server:
-        server.starttls()
+    with smtp_client(host, port, timeout=15) as server:
+        if not use_ssl and use_tls:
+            server.ehlo()
+            if not server.has_extn("starttls"):
+                raise RuntimeError("SMTP server does not support STARTTLS")
+            server.starttls()
+            server.ehlo()
         if username and password:
             server.login(username, password)
         server.send_message(msg)

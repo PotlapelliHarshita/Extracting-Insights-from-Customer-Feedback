@@ -28,6 +28,8 @@ def create_app():
     app.config['SMTP_PASSWORD'] = Config.SMTP_PASSWORD
     app.config['SMTP_FROM_EMAIL'] = Config.SMTP_FROM_EMAIL
     app.config['ALERT_EMAIL_TO'] = Config.ALERT_EMAIL_TO
+    app.config['SMTP_USE_TLS'] = Config.SMTP_USE_TLS
+    app.config['SMTP_USE_SSL'] = Config.SMTP_USE_SSL
     app.config['DB_HOST'] = Config.DB_HOST
     app.config['DB_PORT'] = Config.DB_PORT
     app.config['DB_USER'] = Config.DB_USER
@@ -37,6 +39,7 @@ def create_app():
     app.config['JWT_SECRET_KEY'] = Config.JWT_SECRET_KEY
     app.config['FLASK_SECRET_KEY'] = Config.FLASK_SECRET_KEY
     app.config['MIN_PASSWORD_LENGTH'] = Config.MIN_PASSWORD_LENGTH
+    app.config['PASSWORD_REQUIRE_COMPLEXITY'] = Config.PASSWORD_REQUIRE_COMPLEXITY
 
     # JWT Token stored in cookies
     app.config['JWT_TOKEN_LOCATION'] = ['cookies']
@@ -54,6 +57,12 @@ def create_app():
     def inject_template_helpers():
         csrf_cookie_name = app.config.get('JWT_ACCESS_CSRF_COOKIE_NAME', 'csrf_access_token')
         csrf_token = request.cookies.get(csrf_cookie_name, '')
+        min_password_length = app.config.get('MIN_PASSWORD_LENGTH', 8)
+        password_complexity_pattern = (
+            rf"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{{{min_password_length},}}$"
+            if app.config.get('PASSWORD_REQUIRE_COMPLEXITY', True)
+            else rf"^.{{{min_password_length},}}$"
+        )
 
         def csrf_form_input():
             if not csrf_token:
@@ -65,7 +74,8 @@ def create_app():
         return {
             'csrf_form_input': csrf_form_input,
             'jwt_csrf_token': csrf_token,
-            'min_password_length': app.config.get('MIN_PASSWORD_LENGTH', 8),
+            'min_password_length': min_password_length,
+            'password_complexity_pattern': password_complexity_pattern,
         }
 
     # Import routes

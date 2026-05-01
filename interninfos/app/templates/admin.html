@@ -211,11 +211,11 @@
       <div class="two-col">
         <div>
           <label class="label-gz" for="new_password">New password</label>
-          <input class="input-gz" type="password" id="new_password" name="new_password" required minlength="{{ min_password_length }}">
+          <input class="input-gz" type="password" id="new_password" name="new_password" required minlength="{{ min_password_length }}" pattern="{{ password_complexity_pattern }}">
         </div>
         <div>
           <label class="label-gz" for="confirm_password">Confirm password</label>
-          <input class="input-gz" type="password" id="confirm_password" name="confirm_password" required minlength="{{ min_password_length }}">
+          <input class="input-gz" type="password" id="confirm_password" name="confirm_password" required minlength="{{ min_password_length }}" pattern="{{ password_complexity_pattern }}">
         </div>
       </div>
       <button class="btn-gz btn-primary-gz" type="submit">Update Admin Password</button>
@@ -633,7 +633,7 @@
       alert(data.error || 'Unable to queue re-analysis job');
       return;
     }
-    alert(`Queued job #${data.job_id} via ${data.execution_mode}`);
+    alert(data.warning || `Queued job #${data.job_id} via ${data.execution_mode}`);
     await loadJobs();
   });
 
@@ -647,7 +647,7 @@
       alert(data.error || 'Unable to queue alert scan');
       return;
     }
-    alert(`Queued alert scan via ${data.execution_mode}`);
+    alert(data.warning || `Queued alert scan via ${data.execution_mode}`);
     await loadJobs();
   });
 

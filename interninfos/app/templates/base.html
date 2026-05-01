@@ -80,51 +80,6 @@
         };
       }
 
-      function normalizeMojibake(root) {
-        const replacements = [
-          ['â€¢', '·'],
-          ['â€œ', '"'],
-          ['â€', '"'],
-          ['â€˜', "'"],
-          ['â€™', "'"]
-        ];
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-        let node = walker.nextNode();
-        while (node) {
-          const parentTag = node.parentElement ? node.parentElement.tagName : '';
-          if (parentTag === 'SCRIPT' || parentTag === 'STYLE') {
-            node = walker.nextNode();
-            continue;
-          }
-          let text = node.nodeValue;
-          replacements.forEach(([bad, good]) => {
-            if (text.includes(bad)) {
-              text = text.replaceAll(bad, good);
-            }
-          });
-          if (text !== node.nodeValue) {
-            node.nodeValue = text;
-          }
-          node = walker.nextNode();
-        }
-      }
-
-      normalizeMojibake(document.body);
-      if ('MutationObserver' in window) {
-        const observer = new MutationObserver((mutations) => {
-          mutations.forEach((mutation) => {
-            mutation.addedNodes.forEach((node) => {
-              if (node.nodeType === Node.TEXT_NODE && node.parentElement) {
-                normalizeMojibake(node.parentElement);
-              } else if (node.nodeType === Node.ELEMENT_NODE) {
-                normalizeMojibake(node);
-              }
-            });
-          });
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-      }
-
       const prefersReduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       const revealItems = document.querySelectorAll('.reveal');
 

@@ -58,15 +58,19 @@ def run_analysis_job(job_id: int):
             FOR UPDATE
         """, (job_id,))
         job = cursor.fetchone()
-        if not job or job["status"] not in {"queued", "running"}:
+        if not job or job["status"] != "queued":
             cursor.close()
             return
 
         cursor.execute("""
             UPDATE analysis_jobs
             SET status = 'running', started_at = %s, error_message = NULL
-            WHERE job_id = %s
+            WHERE job_id = %s AND status = 'queued'
         """, (datetime.now(timezone.utc), job_id))
+        if cursor.rowcount != 1:
+            mysql.connection.rollback()
+            cursor.close()
+            return
         mysql.connection.commit()
 
         try:
