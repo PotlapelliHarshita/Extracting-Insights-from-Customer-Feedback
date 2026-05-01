@@ -30,6 +30,15 @@ def dict_cursor():
     return mysql.connection.cursor(cursor_factory=RealDictCursor)
 
 
+def close_cursor_quietly(cursor):
+    if cursor is None:
+        return
+    try:
+        cursor.close()
+    except Exception:
+        current_app.logger.warning("Cursor close failed during request cleanup.", exc_info=True)
+
+
 def fetch_review_analysis_payloads(where_sql="", params=(), limit=100):
     cursor = dict_cursor()
     query = f"""
@@ -293,8 +302,7 @@ def login():
             flash_auth_backend_error("Login")
             return redirect(url_for("main.login"))
         finally:
-            if cursor is not None:
-                cursor.close()
+            close_cursor_quietly(cursor)
 
         if user and check_password_hash(user["password_hash"], password):
             access_token = create_access_token(identity=str(user["user_id"]))
@@ -331,8 +339,7 @@ def admin_login():
             flash_auth_backend_error("Admin login")
             return redirect(url_for("main.admin_login"))
         finally:
-            if cursor is not None:
-                cursor.close()
+            close_cursor_quietly(cursor)
 
         if admin and check_password_hash(admin["password_hash"], password):
             access_token = create_access_token(identity=admin["username"], additional_claims={"role": "admin"})
@@ -405,8 +412,7 @@ def register():
             flash_auth_backend_error("Registration")
             return render_template("register.html", username=username, email=email)
         finally:
-            if cursor:
-                cursor.close()
+            close_cursor_quietly(cursor)
 
     return render_template("register.html")
 
